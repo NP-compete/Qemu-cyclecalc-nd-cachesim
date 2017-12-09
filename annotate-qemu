@@ -1,0 +1,136 @@
+#!/bin/bash
+
+QEMU_SRCS_DIR=$1
+
+# This will help us retrieve where we made the insertion
+L_S="/* Annotation made by Rabbits */" # Label Start
+L_E="/* -------------------------- */" # Label End
+
+# This is the suffix for backup files in case the inserion goes wrong
+B_F=".rabbits_annotation"
+
+# ----------- Generic Annotation -------------- #
+
+#   Insert function in cpus.c to know when the CPU is changed
+#   This happen in tcg_exec_all(void) within the for loop
+
+    CPU_FUNCTION=rabbits_cpu_update
+
+    # find the the function
+    RES=$(grep -rn "${QEMU_SRCS_DIR}" --include=*.c -e "static void tcg_exec_all(void)" | tail -n 1)
+    FILE_NAME=$(echo ${RES} | cut -d ":" -f1)
+    NUM_LINE=$(echo ${RES} | cut -d ":" -f2)
+
+    # Search the for loop
+    NUM_LINE_ADD=`expr "${NUM_LINE}" + 20`
+    NUM_LINE_SUP=$(head -n ${NUM_LINE_ADD} ${FILE_NAME} | tail -n 20 | grep -n -e "for" | cut -d ":" -f1)
+
+    NUM_LINE=`expr "${NUM_LINE}" + "${NUM_LINE_SUP}" + 1` # Where to insert our call
+    sed -i$B_F "${NUM_LINE}i\    ${L_S}\n\
+    ${CPU_FUNCTION}();\n\
+    ${L_E}" $FILE_NAME
+
+
+# Insert an init function to initialize the CPUS structure
+# We need to get the number of CPU from Qemu (-smp)
+
+    FILE_NAME="${QEMU_SRCS_DIR}/vl.c"
+    RES=$(grep  -n "${FILE_NAME}" -e "main_loop(" | tail -n 1)
+    NUM_LINE=$(echo ${RES} | cut -d ":" -f1) #We will insert before qemu start
+
+    # "smp_cpus" is a Qemu var, becarefull when it changes !!
+    NUM_LINE=`expr "${NUM_LINE}" + 0`
+    sed -i$B_F "${NUM_LINE}i\    ${L_S}\n\
+    init_cpus(smp_cpus);\n\
+    ${L_E}" $FILE_NAME
+
+
+# ----------- End Generic Annotation -------------- #
+
+
+# -------- Insert annotation in ARM architecture -------- #
+
+#   We are intrested by the function disas_arm_insn
+#   This function is called within the generate_intermediate_code
+#   to decode a loaded instruction.
+
+    ARCH=arm
+
+    # find the call of disas_arm_insn
+    # This is a hard coded insertion !! we need to find a better way
+    # we need to verify that the name of var are always the same !
+    # So becareful when version of qemu changes
+    FILE_NAME="${QEMU_SRCS_DIR}/target-${ARCH}/translate.c"
+    RES=$(grep  -n "${FILE_NAME}" -e "disas_arm_insn(" | tail -n 1)
+    NUM_LINE=$(echo ${RES} | cut -d ":" -f1)
+
+    NUM_LINE_B=`expr "${NUM_LINE}" - 0` # Where to insert "before" call
+    sed -i$B_F "${NUM_LINE_B}i\    ${L_S}\n\
+    rabbits_${ARCH}_call_before(dc->pc, cpu_R[(insn >> 16) & 0xf], cpu_R[insn & 0xf]);\n\
+    ${L_E}" $FILE_NAME
+
+    NUM_LINE_A=`expr "${NUM_LINE}" + 4` # Where to insert "after" call
+    sed -i "${NUM_LINE_A}i\    ${L_S}\n\
+    rabbits_${ARCH}_call_after(insn, dc->mmu_idx);\n\
+    ${L_E}" $FILE_NAME
+
+
+    # We need also to insert an init function
+    RES=$(grep  -n "${FILE_NAME}" -e "arm_translate_init(" | tail -n 1)
+    NUM_LINE=$(echo ${RES} | cut -d ":" -f1)
+
+    NUM_LINE=`expr "${NUM_LINE}" + 2` # Where to insert the call
+    sed -i "${NUM_LINE}i\    ${L_S}\n\
+    ${ARCH}_decoder_init();\n\
+    ${L_E}" $FILE_NAME
+
+
+
+# -------- End Annotation insertion in ARM --------------- #
+
+
+# -------- Insert annotation in MIPS architecture -------- #
+
+#   We are intrested by the function decode_opc
+#   This function is called within the generate_intermediate_code
+#   to decode a loaded instruction.
+
+    ARCH=mips
+
+    # find the call of decode_opc
+    # This is a hard coded insertion !! we need to find a better way
+    # we need to verify that the name of var are always the same !
+    # So becareful when version of qemu changes
+    FILE_NAME="${QEMU_SRCS_DIR}/target-${ARCH}/translate.c"
+    RES=$(grep  -n "${FILE_NAME}" -e "decode_opc(" | tail -n 1)
+    NUM_LINE=$(echo ${RES} | cut -d ":" -f1)
+
+    NUM_LINE_B=`expr "${NUM_LINE}" - 0` # Where to insert "before" call
+    sed -i$B_F "${NUM_LINE_B}i\    ${L_S}\n\
+    rabbits_${ARCH}_call_before(ctx.pc, cpu_gpr[ (ctx.opcode >> 21) & 0x1f], (ctx.opcode >> 21) & 0x1f);\n\
+    ${L_E}" $FILE_NAME
+
+    NUM_LINE_A=`expr "${NUM_LINE}" + 4` # Where to insert "after" call
+    sed -i "${NUM_LINE_A}i\    ${L_S}\n\
+    rabbits_${ARCH}_call_after(ctx.opcode, ctx.mem_idx);\n\
+    ${L_E}" $FILE_NAME
+
+
+    # We need also to change the cpu_env
+    # we have to remove the static in order to be able to access it outside
+    RES=$(grep  -n "${FILE_NAME}" -e "static TCGv_ptr cpu_env" | tail -n 1)
+    NUM_LINE=$(echo ${RES} | cut -d ":" -f1)
+
+    NUM_LINE=`expr "${NUM_LINE}" + 0` # Where to insert the call
+    sed -i "${NUM_LINE}i\    ${L_S}\n\
+    /*" $FILE_NAME
+
+    NUM_LINE=`expr "${NUM_LINE}" + 3` # Where to insert the call
+    sed -i "${NUM_LINE}i\    */\n\
+    TCGv_ptr cpu_env;\n\
+    ${L_E}" $FILE_NAME
+
+
+# -------- End Annotation insertion in Mips --------------- #
+
+

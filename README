@@ -1,0 +1,18 @@
+This is a small a project that allow to annotate qemu with a non intrusive way :
+ - Cycle calculation
+ - Abstract Cache simulation
+
+This works with "arm-softmmu" and "mips-softmmu" target and with Qemu version 2.5
+
+
+HOW TO INSTALL :
+
+1) Download the last version of Qemu from the main repo
+
+2) run install.sh (you have to edit this file in order to specify the Qemu Dir)
+
+6) Run Make of Qemu !
+
+
+
+
